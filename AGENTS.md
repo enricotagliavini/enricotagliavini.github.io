@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Project: GitHub Pages site hosting a self-produced DNF RPM repository
-(`ai-custom-infra`, Fedora 44). Hobby project; optimize for **minimal
-maintenance and dependability** — boring, few moving parts, no third-party
+(`ai-custom-infra`, Fedora based). Hobby project; optimize for **minimal
+maintenance and dependability** — reliable, few moving parts, no third-party
 CI actions.
 
 ## Layout
@@ -13,7 +13,6 @@ CI actions.
 - `scripts/publish-release.sh <version> [tarball] [notes]` — creates the GitHub release.
 - `.github/workflows/deploy.yml` — the only CI. Deploys `web/` + the release asset
   to the `gh-pages` branch.
-- `f44/` — local DNF repo input (gitignored, never committed).
 - `dist/` — tarball output (gitignored, never committed).
 
 ## Hard constraints (do not break)
@@ -36,7 +35,7 @@ CI actions.
 ## Canonical update flow (run locally, needs `gh` authenticated)
 
 ```sh
-./scripts/package-repo.sh f44 1.1.0    # → dist/ai-custom-infra-1.1.0.tar.zst
+./scripts/package-repo.sh path/to/repo 1.1.0    # → dist/ai-custom-infra-1.1.0.tar.zst
 ./scripts/publish-release.sh 1.1.0     # → release ai-custom-infra-1.1.0 (triggers pipeline)
 ```
 
@@ -76,4 +75,4 @@ Packages are unsigned. If GPG signing is introduced, all three places
 ## Status (2026-11-12)
 
 - Site: `web/` + workflow defined; first release `ai-custom-infra-1.0.0`
-  (from `f44/`) is the initial deployment.
+  is the initial deployment.

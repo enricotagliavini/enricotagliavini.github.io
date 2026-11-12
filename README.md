@@ -26,7 +26,7 @@ From a machine with `gh` authenticated and the DNF repo directory ready
 (RPMs in place):
 
 ```sh
-./scripts/package-repo.sh f44 1.1.0      # stages a copy, regenerates repodata, writes dist/ai-custom-infra-1.1.0.tar.zst
+./scripts/package-repo.sh path/to/repo 1.1.0      # stages a copy, regenerates repodata, writes dist/ai-custom-infra-1.1.0.tar.zst
 ./scripts/publish-release.sh 1.1.0       # creates release ai-custom-infra-1.1.0 with the tarball
 ```
 
@@ -55,7 +55,7 @@ Save as `/etc/yum.repos.d/ai-custom-infra.repo`, then `sudo dnf makecache`.
 | `web/` | Static site content, copied verbatim to the site root |
 | `scripts/` | Packaging and release scripts (run locally, not in CI) |
 | `.github/workflows/deploy.yml` | Deploys `web/` + latest release asset to `gh-pages` |
-| `f44/`, `dist/` | Local-only (gitignored): DNF repo input and tarball output |
+| `dist/` | Local-only (gitignored): DNF repo input and tarball output |
 
 ## Notes
 
