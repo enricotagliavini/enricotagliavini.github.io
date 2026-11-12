@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>enricotagliavini — repositories</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 44rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.6; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+  pre { padding: 0.75rem 1rem; border-radius: 0.5rem; background: rgba(127,127,127,.14); overflow-x: auto; }
+  h2 { border-bottom: 1px solid rgba(127,127,127,.3); padding-bottom: .25rem; margin-top: 2rem; }
+  p.note { font-size: .9em; opacity: .8; }
+</style>
+</head>
+<body>
+<h1>enricotagliavini</h1>
+<p>Self-hosted artifacts.</p>
+
+<h2>RPM repositories</h2>
+
+<h3>ai-custom-infra</h3>
+<p>Fedora 44 packages: <code>lemonade</code>, <code>llama-cpp</code>.</p>
+<pre>[ai-custom-infra]
+name=AI Custom Infra
+baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra/
+enabled=1
+gpgcheck=0</pre>
+<p>Save the block above as <code>/etc/yum.repos.d/ai-custom-infra.repo</code>, then run
+<code>sudo dnf makecache</code>. <a href="https://enricotagliavini.github.io/repositories/ai-custom-infra/repodata/repomd.xml">Check that the repo is online</a>.</p>
+<p class="note">Packages are unsigned (self-produced); hence <code>gpgcheck=0</code>.</p>
+</body>
+</html>
