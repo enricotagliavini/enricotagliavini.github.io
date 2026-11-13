@@ -6,9 +6,11 @@
 # and publishes the result as the Pages artifact (actions/deploy-pages).
 #
 # Triggers:
-#   - release: created -> deploy that release's asset
-#   - push: main       -> redeploy web/ with the latest release's asset
-#                         (static site only while no release exists)
+#   - release: published -> deploy that release's asset. NOTE: use
+#     `published`, NOT `created` — a release created already-published (e.g.
+#     via `gh release create`) fires `published`, not `created`.
+#   - push: main -> redeploy web/ with the latest release's asset
+#     (static site only while no release exists).
 #
 # Only dependencies: first-party actions/* (checkout, upload-pages-artifact,
 # deploy-pages) + preinstalled runner tools (gh, zstd, tar). See AGENTS.md
@@ -20,7 +22,7 @@ on:
   push:
     branches: [main]
   release:
-    types: [edited]
+    types: [published]
 
 # Two deploys must never run concurrently: they would race on the Pages
 # deployment. The second run waits instead.
@@ -47,8 +49,8 @@ jobs:
       #   - release event -> that release's tag
       #   - push event    -> the latest release
       #   - no release yet -> static site only
-      # The release `created` event can fire before the asset upload
-      # finishes, so poll for the asset before downloading.
+      # The event can arrive before the asset upload finishes, so poll for
+      # the asset before downloading.
       - name: Download repo archive
         id: asset
         env:

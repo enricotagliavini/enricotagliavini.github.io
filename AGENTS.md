@@ -50,8 +50,9 @@ CI actions.
   `repodata/repomd.xml` + ≥1 `.rpm`, and writes the zstd tarball. It never
   modifies the input dir.
 - `publish-release.sh` fails hard if the tag already exists: bump the version.
-- The pipeline runs on `release: created` and `push: main` (push redeploys
-  `web/` with the latest release asset; with no release yet, static-only).
+- The pipeline runs on `release: published` (NOT `created` — a release created
+  already-published fires `published`) and `push: main` (push redeploys `web/`
+  with the latest release asset; with no release yet, static-only).
 
 ## Verifying a package locally (before publishing)
 
