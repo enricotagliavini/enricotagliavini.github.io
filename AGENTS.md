@@ -94,3 +94,7 @@ Packages are unsigned. If GPG signing is introduced, all three places
   environment has **no** deployment branch policy (constraint 6).
 - The repo folder serves a generated package index (`index.html` built in the
   workflow's Build step — GitHub Pages has no directory autoindex).
+- A downloadable DNF repo file (`ai-custom-infra.repo`) is generated in the
+  workflow's Build step and served from the repo folder at
+  `https://enricotagliavini.github.io/repositories/ai-custom-infra/ai-custom-infra.repo`;
+  the generated `index.html` links to it (same client-install contract as above).
