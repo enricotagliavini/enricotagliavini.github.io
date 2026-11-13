@@ -93,6 +93,33 @@ jobs:
             archive="$(ls "$RUNNER_TEMP"/asset/ai-custom-infra-*.tar.zst)"
             tar --zstd -xf "$archive" -C build/repositories/ai-custom-infra
             test -f build/repositories/ai-custom-infra/repodata/repomd.xml
+            # GitHub Pages has no directory listing: generate an index.html
+            # for the repo folder (one table per subdirectory).
+            repo=build/repositories/ai-custom-infra
+            {
+              echo '<!doctype html>'
+              echo '<html lang="en"><head><meta charset="utf-8">'
+              echo '<meta name="viewport" content="width=device-width, initial-scale=1">'
+              echo '<title>ai-custom-infra - packages</title>'
+              echo '<style>:root{color-scheme:light dark}body{font-family:system-ui,sans-serif;max-width:46rem;margin:3rem auto;padding:0 1rem;line-height:1.5}code{font-family:ui-monospace,monospace;font-size:.92em}table{border-collapse:collapse;width:100%}td,th{padding:.3rem .75rem .3rem 0;text-align:left}tr{border-bottom:1px solid rgba(127,127,127,.25)}a{color:#0645ad}</style>'
+              echo '</head><body>'
+              echo '<h1>ai-custom-infra</h1>'
+              echo '<p><a href="../..">&larr; home</a> &middot; <a href="repodata/repomd.xml">repodata</a></p>'
+              for sub in "$repo"/*/; do
+                [ -d "$sub" ] || continue
+                name=$(basename "$sub")
+                echo "<h2>$name</h2>"
+                echo '<table><tr><th>package</th><th>size</th></tr>'
+                for rpm in "$sub"*.rpm; do
+                  [ -f "$rpm" ] || continue
+                  b=$(basename "$rpm")
+                  s=$(numfmt --to=iec "$(stat -c%s "$rpm")")
+                  echo "<tr><td><a href=\"$name/$b\"><code>$b</code></a></td><td>$s</td></tr>"
+                done
+                echo '</table>'
+              done
+              echo '</body></html>'
+            } > "$repo/index.html"
           fi
           echo "site files: $(find build -type f | wc -l)"
 
