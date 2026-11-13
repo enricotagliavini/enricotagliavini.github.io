@@ -1,0 +1,118 @@
+# Deploys the site to the gh-pages branch (served by GitHub Pages).
+#
+# The DNF repository is never committed to this repo (RPMs exceed GitHub's
+# 100 MB per-file limit): each release carries the whole repo as one tar.zst
+# asset, and this workflow extracts it under repositories/ai-custom-infra/.
+#
+# Triggers:
+#   - release: created -> deploy that release's asset
+#   - push: main       -> redeploy web/ with the latest release's asset
+#                         (static site only while no release exists)
+#
+# Only dependency: actions/checkout. Everything else uses preinstalled
+# runner tools (gh, zstd, git, rsync). See AGENTS.md for the invariants.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [created]
+
+# Two deploys must never run concurrently: they would race on the gh-pages
+# push. The second run waits instead.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      # Find the archive to deploy:
+      #   - release event -> that release's tag
+      #   - push event    -> the latest release
+      #   - no release yet -> static site only
+      # The release `created` event can fire before the asset upload
+      # finishes, so poll for the asset before downloading.
+      - name: Download repo archive
+        id: asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name }}"
+          if [ -z "$tag" ]; then
+            tag="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          fi
+          if [ -z "$tag" ]; then
+            echo "No release yet - deploying static site only."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Waiting for asset of release $tag ..."
+          deadline=$((SECONDS + 600))
+          until gh release view "$tag" --json assets \
+               --jq '.assets | map(.name) | join(" ")' | grep -qE 'ai-custom-infra-.*\.tar\.zst'; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "error: release $tag has no tarball asset after 10 minutes" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+          gh release download "$tag" --pattern 'ai-custom-infra-*.tar.zst' --dir "$RUNNER_TEMP/asset"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Deploying $tag"
+
+      # Assemble the site: web/ verbatim + the extracted DNF repo. Fail
+      # loudly if the archive does not contain a readable DNF repo.
+      - name: Build site
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          cp -r web/. build/
+          if [ "${{ steps.asset.outputs.found }}" = "true" ]; then
+            mkdir -p build/repositories/ai-custom-infra
+            archive="$(ls "$RUNNER_TEMP"/asset/ai-custom-infra-*.tar.zst)"
+            tar --zstd -xf "$archive" -C build/repositories/ai-custom-infra
+            test -f build/repositories/ai-custom-infra/repodata/repomd.xml
+          fi
+          echo "site files: $(find build -type f | wc -l)"
+
+      # Replace the gh-pages contents with the new build and push.
+      - name: Deploy to gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          url="https://x-access-token:${GH_TOKEN}@github.com/${repo}.git"
+          if ! git clone --quiet --depth 1 --branch gh-pages "$url" .deploy; then
+            # First deploy ever: start the branch from scratch.
+            rm -rf .deploy
+            git init -q -b gh-pages .deploy
+            git -C .deploy remote add origin "$url"
+          fi
+          git -C .deploy config user.name "github-actions[bot]"
+          git -C .deploy config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # --delete drops files no longer in the build (e.g. RPMs removed
+          # in a new version); --exclude .git keeps the branch history.
+          rsync --quiet -r --delete --exclude .git build/ .deploy/
+          git -C .deploy add -A
+          if git -C .deploy diff --cached --quiet; then
+            echo "No changes - gh-pages is already up to date."
+          else
+            label="${{ steps.asset.outputs.tag }}"
+            [ -n "$label" ] || label="main@${GITHUB_SHA:0:7}"
+            git -C .deploy commit -q -m "deploy: $label"
+            git -C .deploy push -q origin gh-pages
+            echo "Published to gh-pages ($label)."
+          fi
