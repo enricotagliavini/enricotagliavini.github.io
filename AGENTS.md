@@ -37,6 +37,11 @@ CI actions.
 5. Keep CI dependency-free: only first-party `actions/*` (checkout,
    upload-pages-artifact, deploy-pages) + preinstalled runner tools (`gh`,
    `zstd`, `tar`). Do not add third-party actions.
+6. **The `github-pages` environment must have no deployment branch policy**
+   (Settings → Environments → github-pages → "Any branch and tag"). Release
+   runs execute on the release TAG; a branch-restricting policy rejects them
+   with "not allowed to deploy to github-pages". If release deploys start
+   failing, check this first.
 
 ## Canonical update flow (run locally, needs `gh` authenticated)
 
@@ -79,7 +84,11 @@ gpgcheck=0
 Packages are unsigned. If GPG signing is introduced, all three places
 (`web/index.html`, `README.md`, this file) must change together.
 
-## Status (2026-11-12)
+## Status (2026-11-13)
 
-- Site: `web/` + workflow defined; first release `ai-custom-infra-1.0.0`
-  is the initial deployment.
+- Site live: https://enricotagliavini.github.io/repositories/ai-custom-infra/
+  (verified: `dnf --repofrompath` repoquery against the live URL works).
+- Latest release: `ai-custom-infra-1.0.2`. Releases `1.0.0`/`1.0.1` are early
+  test releases (identical content) — safe to delete if you want a clean list.
+- Pages source: "GitHub Actions" (`actions/deploy-pages`); the `github-pages`
+  environment has **no** deployment branch policy (constraint 6).
