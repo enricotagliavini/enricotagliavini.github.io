@@ -1,16 +1,18 @@
-# Deploys the site to the gh-pages branch (served by GitHub Pages).
+# Deploys the site to GitHub Pages (Pages source: "GitHub Actions").
 #
 # The DNF repository is never committed to this repo (RPMs exceed GitHub's
 # 100 MB per-file limit): each release carries the whole repo as one tar.zst
-# asset, and this workflow extracts it under repositories/ai-custom-infra/.
+# asset, and this workflow extracts it under repositories/ai-custom-infra/
+# and publishes the result as the Pages artifact (actions/deploy-pages).
 #
 # Triggers:
 #   - release: created -> deploy that release's asset
 #   - push: main       -> redeploy web/ with the latest release's asset
 #                         (static site only while no release exists)
 #
-# Only dependency: actions/checkout. Everything else uses preinstalled
-# runner tools (gh, zstd, git, rsync). See AGENTS.md for the invariants.
+# Only dependencies: first-party actions/* (checkout, upload-pages-artifact,
+# deploy-pages) + preinstalled runner tools (gh, zstd, tar). See AGENTS.md
+# for the invariants.
 
 name: deploy
 
@@ -20,19 +22,24 @@ on:
   release:
     types: [created]
 
-# Two deploys must never run concurrently: they would race on the gh-pages
-# push. The second run waits instead.
+# Two deploys must never run concurrently: they would race on the Pages
+# deployment. The second run waits instead.
 concurrency:
   group: deploy
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
 
@@ -87,32 +94,11 @@ jobs:
           fi
           echo "site files: $(find build -type f | wc -l)"
 
-      # Replace the gh-pages contents with the new build and push.
-      - name: Deploy to gh-pages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          repo="${{ github.repository }}"
-          url="https://x-access-token:${GH_TOKEN}@github.com/${repo}.git"
-          if ! git clone --quiet --depth 1 --branch gh-pages "$url" .deploy; then
-            # First deploy ever: start the branch from scratch.
-            rm -rf .deploy
-            git init -q -b gh-pages .deploy
-            git -C .deploy remote add origin "$url"
-          fi
-          git -C .deploy config user.name "github-actions[bot]"
-          git -C .deploy config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # --delete drops files no longer in the build (e.g. RPMs removed
-          # in a new version); --exclude .git keeps the branch history.
-          rsync --quiet -r --delete --exclude .git build/ .deploy/
-          git -C .deploy add -A
-          if git -C .deploy diff --cached --quiet; then
-            echo "No changes - gh-pages is already up to date."
-          else
-            label="${{ steps.asset.outputs.tag }}"
-            [ -n "$label" ] || label="main@${GITHUB_SHA:0:7}"
-            git -C .deploy commit -q -m "deploy: $label"
-            git -C .deploy push -q origin gh-pages
-            echo "Published to gh-pages ($label)."
-          fi
+      # Publish the build directory as the Pages site.
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v1
