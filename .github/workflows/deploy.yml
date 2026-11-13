@@ -20,7 +20,7 @@ on:
   push:
     branches: [main]
   release:
-    types: [created]
+    types: [edited]
 
 # Two deploys must never run concurrently: they would race on the Pages
 # deployment. The second run waits instead.
