@@ -45,8 +45,11 @@ die() {
 }
 
 # Remove the temporary staging dir (registered as an EXIT trap by stage_repo).
+# `|| return 0` keeps the script's real exit status: under `set -e` a failing
+# `[ -n ]` in an `&&` list would otherwise become the final exit code.
 cleanup() {
-  [ -n "$stage_dir" ] && rm -rf "$stage_dir"
+  [ -n "$stage_dir" ] || return 0
+  rm -rf -- "$stage_dir"
 }
 
 # Abort early if any required tool is missing, with an install hint.
