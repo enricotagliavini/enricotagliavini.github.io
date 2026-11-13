@@ -9,8 +9,10 @@ CI actions.
 
 - `web/` — static site content; the workflow copies it verbatim to the site root.
   Add files here freely; the deploy workflow never needs changes.
-- `scripts/package-repo.sh <dnf-repo-dir> <version>` — local packaging (see contract below).
-- `scripts/publish-release.sh <version> [tarball] [notes]` — creates the GitHub release.
+- `scripts/package-repo.sh <dnf-repo-dir> <version>` — local packaging
+  (options: `-o/--output-dir`, `-h/--help`; see script header for the contract).
+- `scripts/publish-release.sh <version> [tarball]` — creates the GitHub release
+  (options: `-n/--notes`, `-h/--help`; see script header for the contract).
 - `.github/workflows/deploy.yml` — the only CI. Deploys `web/` + the release asset
   to the `gh-pages` branch.
 - `dist/` — tarball output (gitignored, never committed).
