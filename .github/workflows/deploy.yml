@@ -107,6 +107,7 @@ jobs:
               echo '<p><a href="../..">&larr; home</a> &middot; <a href="repodata/repomd.xml">repodata</a></p>'
               for sub in "$repo"/*/; do
                 [ -d "$sub" ] || continue
+                ls "$sub"*.rpm >/dev/null 2>&1 || continue # skip dirs without RPMs (e.g. repodata)
                 name=$(basename "$sub")
                 echo "<h2>$name</h2>"
                 echo '<table><tr><th>package</th><th>size</th></tr>'
