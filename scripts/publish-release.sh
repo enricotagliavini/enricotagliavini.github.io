@@ -45,11 +45,15 @@ die() {
   exit 1
 }
 
-# Abort early if gh is missing or unauthenticated. Both `gh auth login`
-# (credential store) and an exported GH_TOKEN satisfy this check.
+# Abort early if gh is missing or the ACTIVE token cannot authenticate.
+# NOTE: do not use `gh auth status` as the check — it exits non-zero if ANY
+# configured account (e.g. a stale credential-store entry) is invalid, even
+# when the active token (GH_TOKEN) works. `gh api rate_limit` exercises the
+# token gh will actually use.
 check_deps() {
   command -v gh >/dev/null 2>&1 || die "gh not found (install the GitHub CLI)"
-  gh auth status >/dev/null 2>&1 || die "gh is not authenticated (run: gh auth login, or export GH_TOKEN)"
+  gh api rate_limit >/dev/null 2>&1 \
+    || die "gh is not authenticated (run: gh auth login, or export GH_TOKEN)"
 }
 
 # The version becomes part of the release tag, so keep it to characters that
