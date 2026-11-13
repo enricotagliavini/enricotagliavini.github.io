@@ -104,7 +104,9 @@ parse_args() {
   done
   [ $# -ge 1 ] && [ $# -le 2 ] || { usage >&2; exit 2; }
   version=$1
-  [ $# -eq 2 ] && tarball=$2
+  if [ $# -eq 2 ]; then
+    tarball=$2
+  fi
 }
 
 main() {
