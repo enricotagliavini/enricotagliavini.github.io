@@ -92,3 +92,5 @@ Packages are unsigned. If GPG signing is introduced, all three places
   test releases (identical content) — safe to delete if you want a clean list.
 - Pages source: "GitHub Actions" (`actions/deploy-pages`); the `github-pages`
   environment has **no** deployment branch policy (constraint 6).
+- The repo folder serves a generated package index (`index.html` built in the
+  workflow's Build step — GitHub Pages has no directory autoindex).
