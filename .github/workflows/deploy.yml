@@ -95,10 +95,10 @@ jobs:
           echo "site files: $(find build -type f | wc -l)"
 
       # Publish the build directory as the Pages site.
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: build
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v1
+        uses: actions/deploy-pages@v5
