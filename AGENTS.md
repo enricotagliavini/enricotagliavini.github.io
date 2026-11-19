@@ -9,10 +9,10 @@ CI actions.
 
 - `web/` — static site content; the workflow copies it verbatim to the site root.
   Add files here freely; the deploy workflow never needs changes.
-- `scripts/package-repo.sh <dnf-repo-dir> <version>` — local packaging
-  (options: `-o/--output-dir`, `-h/--help`; see script header for the contract).
-- `scripts/publish-release.sh <version> [tarball]` — creates the GitHub release
-  (options: `-n/--notes`, `-h/--help`; see script header for the contract).
+- `scripts/release.sh <dnf-repo-dir> <version>` — local packaging + publish in
+  one step (options: `-n/--notes`, `-h/--help`; see script header for the
+  contract). Stages a copy of the repo dir, regenerates repodata, writes the
+  tarball, creates the release, then removes the local tarball on exit.
 - `.github/workflows/deploy.yml` — the only CI. Deploys `web/` + the release
   asset to GitHub Pages (Pages source must stay "GitHub Actions"; published
   via `actions/deploy-pages`).
@@ -46,15 +46,22 @@ CI actions.
 ## Canonical update flow (run locally, needs `gh` authenticated)
 
 ```sh
-./scripts/package-repo.sh path/to/repo 1.1.0    # → dist/ai-custom-infra-1.1.0.tar.zst
-./scripts/publish-release.sh 1.1.0     # → release ai-custom-infra-1.1.0 (triggers pipeline)
+./scripts/release.sh path/to/repo 1.1.0   # → release ai-custom-infra-1.1.0 (triggers pipeline; removes the local tarball)
 ```
 
-- `package-repo.sh` stages a copy of the repo dir, regenerates repodata with
+- `release.sh` stages a copy of the repo dir, regenerates repodata with
   `createrepo_c` (MUST — otherwise new RPMs are invisible to dnf), verifies
-  `repodata/repomd.xml` + ≥1 `.rpm`, and writes the zstd tarball. It never
-  modifies the input dir.
-- `publish-release.sh` fails hard if the tag already exists: bump the version. It
+  `repodata/repomd.xml` + ≥1 `.rpm`, then creates the release and removes the
+  local tarball on exit (on success or failure, via an `EXIT` trap). It never
+  modifies the input dir. It fails hard if the tag already exists: bump the
+  version — this is checked **before** staging/packaging, so an already-published
+  version never produces a tarball. It tags the release at a **fresh marker
+  commit** (same tree as HEAD, unique SHA) built with `git commit-tree`. GitHub
+  Pages caches a deployment per commit SHA and skips re-deploying a SHA it
+  already served — tagging main's already-served HEAD would make the release
+  deploy a no-op. The marker is a bare commit (no branch): `main` history stays
+  clean, and git pushes it alongside the tag so it stays reachable for the
+  workflow's checkout. It
   tags the release at a **fresh marker commit** (same tree as HEAD, unique SHA)
   built with `git commit-tree`. GitHub Pages caches a deployment per commit SHA
   and skips re-deploying a SHA it already served — tagging main's already-served
@@ -67,13 +74,13 @@ CI actions.
   does **not** push `main`, so the release trigger is required — and with the
   marker commit it now fires on a never-deployed SHA, so it no longer no-ops.
 
-## Verifying a package locally (before publishing)
+## Verifying a release (after publishing)
+
+`release.sh` validates the repo locally before publishing — it regenerates
+repodata, checks `repomd.xml` + ≥1 `.rpm`, and confirms the archive-root layout.
+The tarball is removed automatically, so verify the live result instead:
 
 ```sh
-# tarball structure: repo at archive root
-zstd -dc dist/ai-custom-infra-1.0.0.tar.zst | tar -t | head        # expect repodata/ … at top
-# dnf can read the staged repo
-dnf --disablerepo='*' --repofrompath=aci,<staged-dir> repoquery -l
 # live check after deploy (Pages takes ~1 min to propagate)
 curl -fsS https://enricotagliavini.github.io/repositories/ai-custom-infra/repodata/repomd.xml
 dnf --disablerepo='*' --repofrompath=aci,https://enricotagliavini.github.io/repositories/ai-custom-infra/ repoquery -l

@@ -15,8 +15,7 @@ the asset, extracts it under `repositories/ai-custom-infra/`, and publishes
 
 ```
 local DNF repo (e.g. f44/)
-   │ scripts/package-repo.sh  → dist/ai-custom-infra-<ver>.tar.zst
-   │ scripts/publish-release.sh → gh release ai-custom-infra-<ver> (asset attached)
+   │ scripts/release.sh  → gh release ai-custom-infra-<ver> (asset attached; the local tarball is auto-removed)
    ▼
 .github/workflows/deploy.yml  →  GitHub Pages (actions/deploy-pages)
 ```
@@ -27,13 +26,13 @@ From a machine with `gh` authenticated and the DNF repo directory ready
 (RPMs in place):
 
 ```sh
-./scripts/package-repo.sh path/to/repo 1.1.0      # stages a copy, regenerates repodata, writes dist/ai-custom-infra-1.1.0.tar.zst
-./scripts/publish-release.sh 1.1.0       # creates release ai-custom-infra-1.1.0 with the tarball
+./scripts/release.sh path/to/repo 1.1.0   # stages a copy, regenerates repodata, creates release ai-custom-infra-1.1.0, removes the local tarball
 ```
 
 Creating the release triggers the pipeline automatically; the site is live a few
 minutes later. To publish a new version, always use a new version string
-(existing tags are rejected).
+(existing tags are rejected). The local tarball is removed automatically by
+`release.sh` — on success or failure — so nothing is left behind.
 
 Requirements: `gh`, `zstd`, `createrepo_c`, `git`.
 
@@ -54,7 +53,7 @@ Save as `/etc/yum.repos.d/ai-custom-infra.repo`, then `sudo dnf makecache`.
 | Path | Purpose |
 |---|---|
 | `web/` | Static site content, copied verbatim to the site root |
-| `scripts/` | Packaging and release scripts (run locally, not in CI) |
+| `scripts/release.sh` | Package + publish in one step (run locally, not in CI) |
 | `.github/workflows/deploy.yml` | Deploys `web/` + latest release asset to the Pages site (source: "GitHub Actions", via `actions/deploy-pages`) |
 | `dist/` | Local-only (gitignored): DNF repo input and tarball output |
 
