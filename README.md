@@ -55,7 +55,7 @@ Save as `/etc/yum.repos.d/ai-custom-infra.repo`, then `sudo dnf makecache`.
 |---|---|
 | `web/` | Static site content, copied verbatim to the site root |
 | `scripts/` | Packaging and release scripts (run locally, not in CI) |
-| `.github/workflows/deploy.yml` | Deploys `web/` + latest release asset to `gh-pages` |
+| `.github/workflows/deploy.yml` | Deploys `web/` + latest release asset to the Pages site (source: "GitHub Actions", via `actions/deploy-pages`) |
 | `dist/` | Local-only (gitignored): DNF repo input and tarball output |
 
 ## Notes
@@ -65,6 +65,10 @@ Save as `/etc/yum.repos.d/ai-custom-infra.repo`, then `sudo dnf makecache`.
 - The URL path `/repositories/ai-custom-infra/` is stable across releases; the
   version lives only in the release tag, so client `.repo` files never need
   updating.
+- Each release is tagged at a **fresh marker commit** — a commit with identical
+  site content but a unique SHA. GitHub Pages caches a deployment per commit SHA
+  and would otherwise skip re-deploying one it already served, so this forces a
+  rebuild every release.
 - Packages are unsigned (hence `gpgcheck=0`). If GPG signing is added later,
   update the snippet above and the workflow's `web/` copy.
 - See `AGENTS.md` for the invariants an agent (or a tired future you) must not break.

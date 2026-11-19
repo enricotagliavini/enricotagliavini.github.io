@@ -3,8 +3,10 @@
 # publish-release.sh — create a GitHub release with the packaged repo tarball.
 #
 # Creates release ai-custom-infra-<version> with the tarball attached as the
-# asset. Creating the release triggers .github/workflows/deploy.yml, which
-# deploys the site (live a few minutes later).
+# asset. The release is tagged at a fresh marker commit (see create_release) so
+# the deploy runs on a never-used SHA and GitHub Pages always rebuilds. Creating
+# the release triggers .github/workflows/deploy.yml, which deploys the site
+# (live a few minutes later).
 #
 # An existing tag is a hard error — use a new version for each update.
 #
@@ -79,12 +81,24 @@ release_exists() {
   gh release view "${REPO_NAME}-${version}" >/dev/null 2>&1
 }
 
-# Create the release with the tarball as the only asset. The `release:
-# created` event this generates is what triggers the deploy workflow.
+# Create the release with the tarball as the only asset, tagged at a fresh
+# marker commit (see note below) so the deploy lands on a never-used SHA.
+# The `release: published` event this generates triggers the deploy workflow.
+#
+# Why a marker commit: GitHub Pages caches a deployment per commit SHA and
+# skips a redeploy for a SHA it already served. A release that targets main's
+# HEAD re-deploys that already-served SHA, so Pages no-ops and the new RPMs
+# never go live. `git commit-tree` builds a new commit object with the exact
+# same tree as the current HEAD (identical site content) but a unique SHA;
+# tagging the release at it forces Pages to rebuild. The marker is a bare
+# commit (no branch), so main's history stays clean — git pushes it alongside
+# the tag, keeping it reachable for the workflow's checkout.
 create_release() {
+  local marker_sha
+  marker_sha=$(git commit-tree HEAD^{tree} -m "release marker: ${REPO_NAME}-${version}")
   gh release create "${REPO_NAME}-${version}" \
     --title "${REPO_NAME} ${version}" \
-    --target main \
+    --target "$marker_sha" \
     --notes "${notes:-${REPO_NAME} DNF repository, version ${version}.}" \
     "$tarball"
 }

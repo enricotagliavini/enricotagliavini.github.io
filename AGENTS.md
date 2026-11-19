@@ -54,10 +54,18 @@ CI actions.
   `createrepo_c` (MUST — otherwise new RPMs are invisible to dnf), verifies
   `repodata/repomd.xml` + ≥1 `.rpm`, and writes the zstd tarball. It never
   modifies the input dir.
-- `publish-release.sh` fails hard if the tag already exists: bump the version.
-- The pipeline runs on `release: published` (NOT `created` — a release created
-  already-published fires `published`) and `push: main` (push redeploys `web/`
-  with the latest release asset; with no release yet, static-only).
+- `publish-release.sh` fails hard if the tag already exists: bump the version. It
+  tags the release at a **fresh marker commit** (same tree as HEAD, unique SHA)
+  built with `git commit-tree`. GitHub Pages caches a deployment per commit SHA
+  and skips re-deploying a SHA it already served — tagging main's already-served
+  HEAD would make the release deploy a no-op. The marker is a bare commit (no
+  branch): `main` history stays clean, and git pushes it alongside the tag so it
+  stays reachable for the workflow's checkout.
+- Two triggers, **non-redundant**: `push: main` deploys home-page edits (which
+  create no release) and always redeploys the latest release asset;
+  `release: published` deploys a freshly published release. Publishing a release
+  does **not** push `main`, so the release trigger is required — and with the
+  marker commit it now fires on a never-deployed SHA, so it no longer no-ops.
 
 ## Verifying a package locally (before publishing)
 
