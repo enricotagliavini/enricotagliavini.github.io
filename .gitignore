@@ -1,0 +1,4 @@
+# Local DNF repository input (RPMs are >100 MB and must never enter git)
+f44/
+# Packaging output
+dist/

@@ -1,0 +1,140 @@
+# Deploys the site to GitHub Pages (Pages source: "GitHub Actions").
+#
+# The DNF repository is never committed to this repo (RPMs exceed GitHub's
+# 100 MB per-file limit): each release carries the whole repo as one tar.zst
+# asset, and this workflow extracts it under repositories/ai-custom-infra/
+# and publishes the result as the Pages artifact (actions/deploy-pages).
+#
+# Triggers:
+#   - release: published -> deploy that release's asset. NOTE: use
+#     `published`, NOT `created` — a release created already-published (e.g.
+#     via `gh release create`) fires `published`, not `created`.
+#   - push: main -> redeploy web/ with the latest release's asset
+#     (static site only while no release exists).
+#
+# Only dependencies: first-party actions/* (checkout, upload-pages-artifact,
+# deploy-pages) + preinstalled runner tools (gh, zstd, tar). See AGENTS.md
+# for the invariants.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+# Two deploys must never run concurrently: they would race on the Pages
+# deployment. The second run waits instead.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # Find the archive to deploy:
+      #   - release event -> that release's tag
+      #   - push event    -> the latest release
+      #   - no release yet -> static site only
+      # The event can arrive before the asset upload finishes, so poll for
+      # the asset before downloading.
+      - name: Download repo archive
+        id: asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name }}"
+          if [ -z "$tag" ]; then
+            tag="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          fi
+          if [ -z "$tag" ]; then
+            echo "No release yet - deploying static site only."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Waiting for asset of release $tag ..."
+          deadline=$((SECONDS + 600))
+          until gh release view "$tag" --json assets \
+               --jq '.assets | map(.name) | join(" ")' | grep -qE 'ai-custom-infra-.*\.tar\.zst'; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "error: release $tag has no tarball asset after 10 minutes" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+          gh release download "$tag" --pattern 'ai-custom-infra-*.tar.zst' --dir "$RUNNER_TEMP/asset"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Deploying $tag"
+
+      # Assemble the site: web/ verbatim + the extracted DNF repo. Fail
+      # loudly if the archive does not contain a readable DNF repo.
+      - name: Build site
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          cp -r web/. build/
+          if [ "${{ steps.asset.outputs.found }}" = "true" ]; then
+            mkdir -p build/repositories/ai-custom-infra
+            archive="$(ls "$RUNNER_TEMP"/asset/ai-custom-infra-*.tar.zst)"
+            tar --zstd -xf "$archive" -C build/repositories/ai-custom-infra
+            test -f build/repositories/ai-custom-infra/repodata/repomd.xml
+            # GitHub Pages has no directory listing: generate an index.html
+            # for the repo folder (one table per subdirectory).
+            repo=build/repositories/ai-custom-infra
+            baseurl="https://enricotagliavini.github.io/repositories/ai-custom-infra/"
+            printf '[ai-custom-infra]\nname=AI Custom Infra\nbaseurl=%s\nenabled=1\ngpgcheck=0\n' "$baseurl" > "$repo/ai-custom-infra.repo"
+            # Matches AGENTS.md's client install contract; baseurl points at the deployed repo folder.
+            {
+              echo '<!doctype html>'
+              echo '<html lang="en"><head><meta charset="utf-8">'
+              echo '<meta name="viewport" content="width=device-width, initial-scale=1">'
+              echo '<title>ai-custom-infra - packages</title>'
+              echo '<style>:root{color-scheme:light dark}body{font-family:system-ui,sans-serif;max-width:46rem;margin:3rem auto;padding:0 1rem;line-height:1.5}code{font-family:ui-monospace,monospace;font-size:.92em}table{border-collapse:collapse;width:100%}td,th{padding:.3rem .75rem .3rem 0;text-align:left}tr{border-bottom:1px solid rgba(127,127,127,.25)}a{color:#0645ad}</style>'
+              echo '</head><body>'
+              echo '<h1>ai-custom-infra</h1>'
+              echo '<p><a href="../..">&larr; home</a> &middot; <a href="repodata/repomd.xml">repodata</a></p>'
+              echo '<h2>Install</h2>'
+              echo '<p>Download <a href="ai-custom-infra.repo"><code>ai-custom-infra.repo</code></a> and drop it into'
+              echo '<code>/etc/yum.repos.d/</code>, then run <code>sudo dnf makecache</code>.</p>'
+              for sub in "$repo"/*/; do
+                [ -d "$sub" ] || continue
+                ls "$sub"*.rpm >/dev/null 2>&1 || continue # skip dirs without RPMs (e.g. repodata)
+                name=$(basename "$sub")
+                echo "<h2>$name</h2>"
+                echo '<table><tr><th>package</th><th>size</th></tr>'
+                for rpm in "$sub"*.rpm; do
+                  [ -f "$rpm" ] || continue
+                  b=$(basename "$rpm")
+                  s=$(numfmt --to=iec "$(stat -c%s "$rpm")")
+                  echo "<tr><td><a href=\"$name/$b\"><code>$b</code></a></td><td>$s</td></tr>"
+                done
+                echo '</table>'
+              done
+              echo '</body></html>'
+            } > "$repo/index.html"
+          fi
+          echo "site files: $(find build -type f | wc -l)"
+
+      # Publish the build directory as the Pages site.
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: build
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
