@@ -85,7 +85,10 @@ jobs:
 
       # Assemble the site: web/ verbatim + the three extracted DNF repos.
       # Fail loudly if the archive does not contain all three repos, each
-      # with readable repodata.
+      # with readable repodata; then let scripts/build-site.py generate the
+      # per-repo package listings and the combined .repo file. The repos
+      # landing page is static (web/repositories/index.html) and is copied
+      # verbatim above.
       - name: Build site
         run: |
           set -euo pipefail
@@ -95,6 +98,7 @@ jobs:
           # The three repos live at the archive root; extract them under
           # build/repositories/ so the archive-root layout is preserved
           # (repomd.xml references repo-relative $releasever/$basearch paths).
+          # Canonical list also lives in scripts/build-site.py (REPOS).
           repos="ai-custom-infra ai-custom-infra-source ai-custom-infra-debuginfo"
 
           if [ "${{ steps.asset.outputs.found }}" = "true" ]; then
@@ -111,69 +115,8 @@ jobs:
                 || { echo "error: $repo has no .rpm (nothing classified into it)" >&2; exit 1; }
               echo "  $repo: $n RPMs"
             done
-
-            base="https://enricotagliavini.github.io/repositories"
-            # Combined .repo file (all three repos; source & debuginfo
-            # disabled), served from the main repo folder where baseurl points.
-            {
-              printf '[ai-custom-infra]\n'
-              printf 'name=AI Custom Infra\n'
-              printf 'baseurl=%s/ai-custom-infra/\n' "$base"
-              printf 'enabled=1\ngpgcheck=0\n\n'
-              printf '[ai-custom-infra-source]\n'
-              printf 'name=AI Custom Infra - Source\n'
-              printf 'baseurl=%s/ai-custom-infra-source/\n' "$base"
-              printf 'enabled=0\ngpgcheck=0\n\n'
-              printf '[ai-custom-infra-debuginfo]\n'
-              printf 'name=AI Custom Infra - Debuginfo\n'
-              printf 'baseurl=%s/ai-custom-infra-debuginfo/\n' "$base"
-              printf 'enabled=0\ngpgcheck=0\n'
-            } > build/repositories/ai-custom-infra/ai-custom-infra.repo
-            # Matches AGENTS.md's client install contract: baseurl points at the
-            # deployed repo folders, and the combined file lists all three.
-            {
-              echo '<!doctype html>'
-              echo '<html lang="en"><head><meta charset="utf-8">'
-              echo '<meta name="viewport" content="width=device-width, initial-scale=1">'
-              echo '<title>ai-custom-infra repositories</title>'
-              echo '<style>:root{color-scheme:light dark}body{font-family:system-ui,sans-serif;max-width:46rem;margin:3rem auto;padding:0 1rem;line-height:1.5}code{font-family:ui-monospace,monospace;font-size:.92em}a{color:#0645ad}ul{line-height:1.8}</style>'
-              echo '</head><body>'
-              echo '<h1>ai-custom-infra repositories</h1>'
-              echo '<p><a href="../">&larr; home</a></p>'
-              echo '<p>Self-produced Fedora RPMs, organized by release version. Packages are unsigned.</p>'
-              echo '<ul>'
-              echo '<li><strong>ai-custom-infra</strong> — binary RPMs (<a href="ai-custom-infra/">packages</a>)</li>'
-              echo '<li><strong>ai-custom-infra-source</strong> — source RPMs (<a href="ai-custom-infra-source/">packages</a>)</li>'
-              echo '<li><strong>ai-custom-infra-debuginfo</strong> — debuginfo/debugsource RPMs (<a href="ai-custom-infra-debuginfo/">packages</a>)</li>'
-              echo '</ul>'
-              echo '<p>Install: download <a href="ai-custom-infra/ai-custom-infra.repo"><code>ai-custom-infra.repo</code></a> and drop it into <code>/etc/yum.repos.d/</code>, then run <code>sudo dnf makecache</code>.</p>'
-              echo '</body></html>'
-            } > build/repositories/index.html
-            # Per-repo package listings (every RPM, across version dirs).
-            for repo in $repos; do
-              repo_dir="build/repositories/$repo"
-              {
-                echo '<!doctype html>'
-                echo '<html lang="en"><head><meta charset="utf-8">'
-                echo '<meta name="viewport" content="width=device-width, initial-scale=1">'
-                echo "<title>$repo - packages</title>"
-                echo '<style>:root{color-scheme:light dark}body{font-family:system-ui,sans-serif;max-width:46rem;margin:3rem auto;padding:0 1rem;line-height:1.5}code{font-family:ui-monospace,monospace;font-size:.92em}table{border-collapse:collapse;width:100%}td,th{padding:.3rem .75rem .3rem 0;text-align:left}tr{border-bottom:1px solid rgba(127,127,127,.25)}a{color:#0645ad}</style>'
-                echo '</head><body>'
-                echo "<h1>$repo</h1>"
-                echo '<p><a href="../..">&larr; home</a> &middot; <a href="repodata/repomd.xml">repodata</a></p>'
-                echo '<p>Download <a href="../ai-custom-infra/ai-custom-infra.repo"><code>ai-custom-infra.repo</code></a> and drop it into <code>/etc/yum.repos.d/</code>, then run <code>sudo dnf makecache</code>.</p>'
-                echo '<h2>Packages</h2>'
-                echo '<table><tr><th>package</th><th>size</th></tr>'
-                while IFS= read -r -d '' rpm; do
-                  relpath=$(realpath --relative-to="$repo_dir" "$rpm")
-                  b=$(basename -- "$rpm")
-                  s=$(numfmt --to=iec "$(stat -c%s "$rpm")")
-                  echo "<tr><td><a href=\"$relpath\"><code>$b</code></a></td><td>$s</td></tr>"
-                done < <(find "$repo_dir" -name '*.rpm' -type f -print0 | sort -z)
-                echo '</table>'
-                echo '</body></html>'
-              } > "$repo_dir/index.html"
-            done
+            # Generate the combined .repo file and per-repo package listings.
+            python3 scripts/build-site.py build/repositories
           fi
           echo "site files: $(find build -type f | wc -l)"
 

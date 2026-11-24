@@ -82,8 +82,9 @@ Flip a repo's `enabled` to `1` when you need its packages.
 
 | Path | Purpose |
 |---|---|
-| `web/` | Static site content, copied verbatim to the site root |
+| `web/` | Static site content, copied verbatim to the site root (includes the repos landing page) |
 | `scripts/release.sh` | Package + publish in one step (run locally, not in CI) |
+| `scripts/build-site.py` | Stdlib-Python helper the workflow runs in its Build step to emit the per-repo package listings and the combined `.repo` file |
 | `.github/workflows/deploy.yml` | Deploys `web/` + latest release asset to the Pages site (source: "GitHub Actions", via `actions/deploy-pages`) |
 | `dist/` | Local-only (gitignored): DNF repo input and tarball output |
 
