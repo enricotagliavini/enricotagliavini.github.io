@@ -11,8 +11,10 @@ CI actions.
   Add files here freely; the deploy workflow never needs changes.
 - `scripts/release.sh <dnf-repo-dir> <version>` — local packaging + publish in
   one step (options: `-n/--notes`, `-h/--help`; see script header for the
-  contract). Stages a copy of the repo dir, regenerates repodata, writes the
-  tarball, creates the release, then removes the local tarball on exit.
+  contract). Stages a copy of the repo dir, **reorganizes it into a
+  per-version tree (`<repo>/$releasever/$basearch`, split across three repos),
+  regenerates repodata, writes the tarball, creates the release, then removes
+  the local tarball on exit.**
 - `.github/workflows/deploy.yml` — the only CI. Deploys `web/` + the release
   asset to GitHub Pages (Pages source must stay "GitHub Actions"; published
   via `actions/deploy-pages`).
@@ -26,11 +28,14 @@ CI actions.
    a `gh-pages` branch, and do not edit the deployed site directly — the next
    deploy replaces everything. The Pages source in the repo settings must stay
    on "GitHub Actions".
-3. **The URL `/repositories/ai-custom-infra/` is a public contract.** Do not
-   rename the path, nest a version into it, or change the archive layout:
-   the tarball must contain the DNF repo at the **archive root**
-   (`repodata/…`, `lemonade/…rpm`, …) because `repodata/repomd.xml` references
-   repo-relative paths.
+3. **The URLs `/repositories/ai-custom-infra/`,
+   `/repositories/ai-custom-infra-source/` and
+   `/repositories/ai-custom-infra-debuginfo/` are public contracts.** Do not
+   rename any of these paths, nest a version into them, or change the archive
+   layout: the tarball must contain the **three DNF repos at the archive root**
+   (`ai-custom-infra/`, `ai-custom-infra-source/`, `ai-custom-infra-debuginfo/`),
+   each laid out as `<repo>/$releasever/$basearch/` (e.g. `44/x86_64/`) because
+   each `repodata/repomd.xml` references **repo-relative** paths.
 4. **Release naming:** tag `ai-custom-infra-<version>`, asset
    `ai-custom-infra-<version>.tar.zst`. The workflow matches the asset by
    `ai-custom-infra-*.tar.zst`.
@@ -49,11 +54,14 @@ CI actions.
 ./scripts/release.sh path/to/repo 1.1.0   # → release ai-custom-infra-1.1.0 (triggers pipeline; removes the local tarball)
 ```
 
-- `release.sh` stages a copy of the repo dir, regenerates repodata with
+- `release.sh` stages a copy of the repo dir, **reorganizes it into a
+  per-version tree (`<repo>/$releasever/$basearch`) and splits its RPMs into the
+  three repos (binaries, source, debuginfo), then** regenerates repodata with
   `createrepo_c` (MUST — otherwise new RPMs are invisible to dnf), verifies
-  `repodata/repomd.xml` + ≥1 `.rpm`, then creates the release and removes the
-  local tarball on exit (on success or failure, via an `EXIT` trap). It never
-  modifies the input dir. It fails hard if the tag already exists: bump the
+  `repodata/repomd.xml` + ≥1 `.rpm` **for each repo**, then creates the release
+  and removes the local tarball on exit (on success or failure, via an `EXIT`
+  trap). It never modifies the input dir. It fails hard if the tag already
+  exists: bump the
   version — this is checked **before** staging/packaging, so an already-published
   version never produces a tarball. It tags the release at a **fresh marker
   commit** (same tree as HEAD, unique SHA) built with `git commit-tree`. GitHub
@@ -61,13 +69,7 @@ CI actions.
   already served — tagging main's already-served HEAD would make the release
   deploy a no-op. The marker is a bare commit (no branch): `main` history stays
   clean, and git pushes it alongside the tag so it stays reachable for the
-  workflow's checkout. It
-  tags the release at a **fresh marker commit** (same tree as HEAD, unique SHA)
-  built with `git commit-tree`. GitHub Pages caches a deployment per commit SHA
-  and skips re-deploying a SHA it already served — tagging main's already-served
-  HEAD would make the release deploy a no-op. The marker is a bare commit (no
-  branch): `main` history stays clean, and git pushes it alongside the tag so it
-  stays reachable for the workflow's checkout.
+  workflow's checkout.
 - Two triggers, **non-redundant**: `push: main` deploys home-page edits (which
   create no release) and always redeploys the latest release asset;
   `release: published` deploys a freshly published release. Publishing a release
@@ -77,12 +79,16 @@ CI actions.
 ## Verifying a release (after publishing)
 
 `release.sh` validates the repo locally before publishing — it regenerates
-repodata, checks `repomd.xml` + ≥1 `.rpm`, and confirms the archive-root layout.
-The tarball is removed automatically, so verify the live result instead:
+repodata **for each of the three repos**, checks `repomd.xml` + ≥1 `.rpm` in
+each, and confirms the archive-root layout (all three repos present). The
+tarball is removed automatically, so verify the live result instead:
 
 ```sh
-# live check after deploy (Pages takes ~1 min to propagate)
-curl -fsS https://enricotagliavini.github.io/repositories/ai-custom-infra/repodata/repomd.xml
+# live check after deploy (Pages takes ~1 min to propagate); all three repos
+for repo in ai-custom-infra ai-custom-infra-source ai-custom-infra-debuginfo; do
+  curl -fsS "https://enricotagliavini.github.io/repositories/$repo/repodata/repomd.xml"
+done
+# binaries are enabled by default; query them directly:
 dnf --disablerepo='*' --repofrompath=aci,https://enricotagliavini.github.io/repositories/ai-custom-infra/ repoquery -l
 ```
 
@@ -93,6 +99,18 @@ dnf --disablerepo='*' --repofrompath=aci,https://enricotagliavini.github.io/repo
 name=AI Custom Infra
 baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra/
 enabled=1
+gpgcheck=0
+
+[ai-custom-infra-source]
+name=AI Custom Infra - Source
+baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra-source/
+enabled=0
+gpgcheck=0
+
+[ai-custom-infra-debuginfo]
+name=AI Custom Infra - Debuginfo
+baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra-debuginfo/
+enabled=0
 gpgcheck=0
 ```
 
@@ -107,9 +125,14 @@ Packages are unsigned. If GPG signing is introduced, all three places
   test releases (identical content) — safe to delete if you want a clean list.
 - Pages source: "GitHub Actions" (`actions/deploy-pages`); the `github-pages`
   environment has **no** deployment branch policy (constraint 6).
-- The repo folder serves a generated package index (`index.html` built in the
-  workflow's Build step — GitHub Pages has no directory autoindex).
-- A downloadable DNF repo file (`ai-custom-infra.repo`) is generated in the
-  workflow's Build step and served from the repo folder at
+- The three repo folders are served from `/repositories/<repo>/` (each at
+  `ai-custom-infra/`, `ai-custom-infra-source/`, `ai-custom-infra-debuginfo/`),
+  each with a generated package listing (`index.html` built in the workflow's
+  Build step — GitHub Pages has no directory autoindex).
+- A landing page (`/repositories/index.html`) links to the three repos and to
+  the combined `.repo` file.
+- A downloadable DNF repo file (`ai-custom-infra.repo`) — the combined
+  three-section file above — is generated in the workflow's Build step and
+  served from the main repo folder at
   `https://enricotagliavini.github.io/repositories/ai-custom-infra/ai-custom-infra.repo`;
-  the generated `index.html` links to it (same client-install contract as above).
+  the landing page links to it (same client-install contract as above).
