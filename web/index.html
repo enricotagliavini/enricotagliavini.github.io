@@ -171,22 +171,11 @@
       <p>The artifacts hosted here are published on <strong>GitHub</strong> (via GitHub Actions)
          and served from this site — nothing is self-hosted.</p>
 
-      <article class="repo">
-        <h3>ai-custom-infra</h3>
-        <p>Fedora 44 RPM packages: <code>lemonade</code> and <code>llama-cpp</code>.</p>
-
-        <p>To use it, <a class="btn btn-primary" href="https://enricotagliavini.github.io/repositories/ai-custom-infra/ai-custom-infra.repo">download <code>ai-custom-infra.repo</code></a>,
-           save it as <code>/etc/yum.repos.d/ai-custom-infra.repo</code>, then run
-           <code>sudo dnf makecache</code>.</p>
-
-        <pre>[ai-custom-infra]
-name=AI Custom Infra
-baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra/
-enabled=1
-gpgcheck=0</pre>
-
-        <p class="note">The packages are unsigned (self-produced), which is why <code>gpgcheck=0</code>.</p>
-      </article>
+      <p>
+        <a class="btn btn-primary" href="https://enricotagliavini.github.io/repositories/index.html">
+          Browse the RPM repositories
+        </a>
+      </p>
     </section>
 
   </div>

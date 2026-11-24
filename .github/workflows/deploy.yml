@@ -2,8 +2,10 @@
 #
 # The DNF repository is never committed to this repo (RPMs exceed GitHub's
 # 100 MB per-file limit): each release carries the whole repo as one tar.zst
-# asset, and this workflow extracts it under repositories/ai-custom-infra/
-# and publishes the result as the Pages artifact (actions/deploy-pages).
+# asset, and this workflow extracts it under repositories/ (archive-root
+# layout: the three repos ai-custom-infra/, ai-custom-infra-source/,
+# ai-custom-infra-debuginfo/) and publishes the result as the Pages artifact
+# (actions/deploy-pages).
 #
 # Triggers:
 #   - release: published -> deploy that release's asset. NOTE: use
@@ -81,52 +83,40 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "Deploying $tag"
 
-      # Assemble the site: web/ verbatim + the extracted DNF repo. Fail
-      # loudly if the archive does not contain a readable DNF repo.
+      # Assemble the site: web/ verbatim + the three extracted DNF repos.
+      # Fail loudly if the archive does not contain all three repos, each
+      # with readable repodata; then let scripts/build-site.py generate the
+      # per-repo package listings and the combined .repo file. The repos
+      # landing page is static (web/repositories/index.html) and is copied
+      # verbatim above.
       - name: Build site
         run: |
           set -euo pipefail
           mkdir -p build
           cp -r web/. build/
+
+          # The three repos live at the archive root; extract them under
+          # build/repositories/ so the archive-root layout is preserved
+          # (repomd.xml references repo-relative $releasever/$basearch paths).
+          # Canonical list also lives in scripts/build-site.py (REPOS).
+          repos="ai-custom-infra ai-custom-infra-source ai-custom-infra-debuginfo"
+
           if [ "${{ steps.asset.outputs.found }}" = "true" ]; then
-            mkdir -p build/repositories/ai-custom-infra
+            mkdir -p build/repositories
             archive="$(ls "$RUNNER_TEMP"/asset/ai-custom-infra-*.tar.zst)"
-            tar --zstd -xf "$archive" -C build/repositories/ai-custom-infra
-            test -f build/repositories/ai-custom-infra/repodata/repomd.xml
-            # GitHub Pages has no directory listing: generate an index.html
-            # for the repo folder (one table per subdirectory).
-            repo=build/repositories/ai-custom-infra
-            baseurl="https://enricotagliavini.github.io/repositories/ai-custom-infra/"
-            printf '[ai-custom-infra]\nname=AI Custom Infra\nbaseurl=%s\nenabled=1\ngpgcheck=0\n' "$baseurl" > "$repo/ai-custom-infra.repo"
-            # Matches AGENTS.md's client install contract; baseurl points at the deployed repo folder.
-            {
-              echo '<!doctype html>'
-              echo '<html lang="en"><head><meta charset="utf-8">'
-              echo '<meta name="viewport" content="width=device-width, initial-scale=1">'
-              echo '<title>ai-custom-infra - packages</title>'
-              echo '<style>:root{color-scheme:light dark}body{font-family:system-ui,sans-serif;max-width:46rem;margin:3rem auto;padding:0 1rem;line-height:1.5}code{font-family:ui-monospace,monospace;font-size:.92em}table{border-collapse:collapse;width:100%}td,th{padding:.3rem .75rem .3rem 0;text-align:left}tr{border-bottom:1px solid rgba(127,127,127,.25)}a{color:#0645ad}</style>'
-              echo '</head><body>'
-              echo '<h1>ai-custom-infra</h1>'
-              echo '<p><a href="../..">&larr; home</a> &middot; <a href="repodata/repomd.xml">repodata</a></p>'
-              echo '<h2>Install</h2>'
-              echo '<p>Download <a href="ai-custom-infra.repo"><code>ai-custom-infra.repo</code></a> and drop it into'
-              echo '<code>/etc/yum.repos.d/</code>, then run <code>sudo dnf makecache</code>.</p>'
-              for sub in "$repo"/*/; do
-                [ -d "$sub" ] || continue
-                ls "$sub"*.rpm >/dev/null 2>&1 || continue # skip dirs without RPMs (e.g. repodata)
-                name=$(basename "$sub")
-                echo "<h2>$name</h2>"
-                echo '<table><tr><th>package</th><th>size</th></tr>'
-                for rpm in "$sub"*.rpm; do
-                  [ -f "$rpm" ] || continue
-                  b=$(basename "$rpm")
-                  s=$(numfmt --to=iec "$(stat -c%s "$rpm")")
-                  echo "<tr><td><a href=\"$name/$b\"><code>$b</code></a></td><td>$s</td></tr>"
-                done
-                echo '</table>'
-              done
-              echo '</body></html>'
-            } > "$repo/index.html"
+            tar --zstd -xf "$archive" -C build/repositories
+            # Every repo must be a usable DNF repo: repomd.xml + >=1 .rpm.
+            for repo in $repos; do
+              repo_dir="build/repositories/$repo"
+              test -f "$repo_dir/repodata/repomd.xml" \
+                || { echo "error: $repo has no repodata/repomd.xml" >&2; exit 1; }
+              n=$(find "$repo_dir" -name '*.rpm' | wc -l)
+              [ "$n" -ge 1 ] \
+                || { echo "error: $repo has no .rpm (nothing classified into it)" >&2; exit 1; }
+              echo "  $repo: $n RPMs"
+            done
+            # Generate the combined .repo file and per-repo package listings.
+            python3 scripts/build-site.py build/repositories
           fi
           echo "site files: $(find build -type f | wc -l)"
 
