@@ -116,11 +116,12 @@ enabled=0
 gpgcheck=0
 ```
 
-Each baseurl ends in `$releasever/$basearch`: the generated file is the mirror
-of what `scripts/build-site.py` emits, which reads the versioned components off
-the actual tree (`versioned_tree()`) rather than hardcoding them. Clients using
-the old flat URLs (e.g. `.../repositories/ai-custom-infra/`) no longer resolve;
-this was a deliberate breaking change.
+Each baseurl ends in the literal `$releasever/$basearch`: the generated file is
+the mirror of what `scripts/build-site.py` emits, which writes that template
+verbatim and never substitutes concrete values — `dnf` expands them at runtime
+from the client's OS/arch. Clients using the old flat URLs (e.g.
+`.../repositories/ai-custom-infra/`) no longer resolve; `repodata/` now lives
+under the versioned tree.
 
 Packages are unsigned. If GPG signing is introduced, all three places
 (`web/index.html`, `README.md`, this file) must change together.
