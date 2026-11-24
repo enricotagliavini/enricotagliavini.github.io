@@ -1,0 +1,130 @@
+# Deploys the site to GitHub Pages (Pages source: "GitHub Actions").
+#
+# The DNF repository is never committed to this repo (RPMs exceed GitHub's
+# 100 MB per-file limit): each release carries the whole repo as one tar.zst
+# asset, and this workflow extracts it under repositories/ (archive-root
+# layout: the three repos ai-custom-infra/, ai-custom-infra-source/,
+# ai-custom-infra-debuginfo/) and publishes the result as the Pages artifact
+# (actions/deploy-pages).
+#
+# Triggers:
+#   - release: published -> deploy that release's asset. NOTE: use
+#     `published`, NOT `created` — a release created already-published (e.g.
+#     via `gh release create`) fires `published`, not `created`.
+#   - push: main -> redeploy web/ with the latest release's asset
+#     (static site only while no release exists).
+#
+# Only dependencies: first-party actions/* (checkout, upload-pages-artifact,
+# deploy-pages) + preinstalled runner tools (gh, zstd, tar). See AGENTS.md
+# for the invariants.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+# Two deploys must never run concurrently: they would race on the Pages
+# deployment. The second run waits instead.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # Find the archive to deploy:
+      #   - release event -> that release's tag
+      #   - push event    -> the latest release
+      #   - no release yet -> static site only
+      # The event can arrive before the asset upload finishes, so poll for
+      # the asset before downloading.
+      - name: Download repo archive
+        id: asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.release.tag_name }}"
+          if [ -z "$tag" ]; then
+            tag="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          fi
+          if [ -z "$tag" ]; then
+            echo "No release yet - deploying static site only."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Waiting for asset of release $tag ..."
+          deadline=$((SECONDS + 600))
+          until gh release view "$tag" --json assets \
+               --jq '.assets | map(.name) | join(" ")' | grep -qE 'ai-custom-infra-.*\.tar\.zst'; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "error: release $tag has no tarball asset after 10 minutes" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+          gh release download "$tag" --pattern 'ai-custom-infra-*.tar.zst' --dir "$RUNNER_TEMP/asset"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Deploying $tag"
+
+      # Assemble the site: web/ verbatim + the three extracted DNF repos.
+      # Fail loudly if the archive does not contain all three repos, each
+      # with readable repodata; then let scripts/build-site.py generate the
+      # per-repo package listings and the combined .repo file. The repos
+      # landing page is static (web/repositories/index.html) and is copied
+      # verbatim above.
+      - name: Build site
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          cp -r web/. build/
+
+          # The three repos live at the archive root; extract them under
+          # build/repositories/ so the archive-root layout is preserved
+          # (repomd.xml references repo-relative $releasever/$basearch paths).
+          # Canonical list also lives in scripts/build-site.py (REPOS).
+          repos="ai-custom-infra ai-custom-infra-source ai-custom-infra-debuginfo"
+
+          if [ "${{ steps.asset.outputs.found }}" = "true" ]; then
+            mkdir -p build/repositories
+            archive="$(ls "$RUNNER_TEMP"/asset/ai-custom-infra-*.tar.zst)"
+            tar --zstd -xf "$archive" -C build/repositories
+            # Every repo must be a usable DNF repo: repomd.xml + >=1 .rpm.
+            for repo in $repos; do
+              repo_dir="build/repositories/$repo"
+              test -f "$repo_dir/repodata/repomd.xml" \
+                || { echo "error: $repo has no repodata/repomd.xml" >&2; exit 1; }
+              n=$(find "$repo_dir" -name '*.rpm' | wc -l)
+              [ "$n" -ge 1 ] \
+                || { echo "error: $repo has no .rpm (nothing classified into it)" >&2; exit 1; }
+              echo "  $repo: $n RPMs"
+            done
+            # Generate the combined .repo file and per-repo package listings.
+            python3 scripts/build-site.py build/repositories
+          fi
+          echo "site files: $(find build -type f | wc -l)"
+
+      # Publish the build directory as the Pages site.
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: build
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
