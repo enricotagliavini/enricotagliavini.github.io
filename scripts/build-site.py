@@ -66,7 +66,7 @@ REPO_PAGE = Template(
     "</head><body>\n"
     "<h1>$name</h1>\n"
     '<p><a href="../..">&larr; home</a> &middot; '
-    '<a href="repodata/repomd.xml">repodata</a></p>\n'
+    '<a href="$repodata">repodata</a></p>\n'
     '<p>Download <a href="../ai-custom-infra/ai-custom-infra.repo">'
     "<code>ai-custom-infra.repo</code></a> and drop it into "
     "<code>/etc/yum.repos.d/</code>, then run "
@@ -126,11 +126,16 @@ def write_repo_listing(repo_dir: Path) -> None:
         (p for p in repo_dir.rglob("*.rpm") if p.is_file()),
         key=lambda p: p.relative_to(repo_dir),
     )
+    # repodata sits at the versioned leaf (<repo>/$releasever/$basearch/repodata/);
+    # link to it by repo-relative path so the listing stays version-agnostic.
+    repomd = next(repo_dir.rglob("repodata/repomd.xml"), None)
+    repodata = str(repomd.relative_to(repo_dir)) if repomd else "repodata/repomd.xml"
     doc = REPO_PAGE.substitute(
         title=f"{repo_dir.name} - packages",
         style=PER_REPO_STYLE,
         name=html.escape(repo_dir.name),
         rows="".join(render_row(repo_dir, p) for p in rpms),
+        repodata=repodata,
     )
     (repo_dir / "index.html").write_text(doc, encoding="utf-8")
 
