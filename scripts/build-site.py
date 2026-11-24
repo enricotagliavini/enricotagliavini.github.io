@@ -10,6 +10,12 @@ ai-custom-infra-source, ai-custom-infra-debuginfo), each laid out as
 <repo>/$releasever/$basearch/. For each repo this writes a package listing
 (index.html); for the binaries repo it also writes the combined .repo file.
 
+Each baseurl points at the versioned tree itself
+(<https://enricotagliavini.github.io/repositories/<repo>/$releasever/$basearch/),
+where repodata lives — that is what makes the client config resolvable. The
+versioned components are read off the tree, never copied by hand (AGENTS.md
+layout invariant).
+
 The repos landing page (repositories/index.html) is static content in web/,
 copied verbatim by the workflow, and is intentionally NOT generated here.
 """
@@ -72,6 +78,21 @@ REPO_PAGE = Template(
 )
 
 
+# Each repo dir is <repo>/$releasever/$basearch/: the versioned tree is the
+# only first-level child of the repo dir, and its only child is the basearch
+# (only x86_64 is published). The baseurl points at this tree, so read the
+# versioned components off the tree itself (never hardcode them); fails
+# loudly if the layout is missing.
+def versioned_tree(repo_dir: Path) -> tuple[str, str]:
+    """($releasever, $basearch) of the tree this repo lives in."""
+    child = next((p for p in repo_dir.iterdir() if p.is_dir()), None)
+    if child is None or next((p for p in child.iterdir() if p.is_dir()), None) is None:
+        raise ValueError(
+            f"{repo_dir} is not laid out as <repo>/$releasever/$basearch/"
+        )
+    return child.name, next(p.name for p in child.iterdir() if p.is_dir())
+
+
 def human_size(nbytes: int) -> str:
     """Format a byte count like `numfmt --to=iec` (base-1024, one decimal)."""
     if nbytes < 1024:
@@ -84,15 +105,16 @@ def human_size(nbytes: int) -> str:
     return f"{value:.1f}P"
 
 
-def render_repo_file() -> str:
+def render_repo_file(repos_dir: Path) -> str:
     """The combined .repo file: all three repos, source/debuginfo disabled."""
     sections = []
     for repo in REPOS:
         name, enabled = REPO_SECTION[repo]
+        releasever, basearch = versioned_tree(repos_dir / repo)
         sections.append(
             f"[{repo}]\n"
             f"name={name}\n"
-            f"baseurl={BASE_URL}/{repo}/\n"
+            f"baseurl={BASE_URL}/{repo}/{releasever}/{basearch}/\n"
             f"enabled={enabled}\n"
             "gpgcheck=0"
         )
@@ -131,7 +153,7 @@ def main() -> int:
     # Combined .repo file lives in the binaries repo folder, where baseurl
     # points (matches the AGENTS.md client-install contract).
     (repos_dir / REPOS[0] / "ai-custom-infra.repo").write_text(
-        render_repo_file(), encoding="utf-8"
+        render_repo_file(repos_dir), encoding="utf-8"
     )
 
     # Per-repo package listing for each DNF repo present on disk.

@@ -84,12 +84,14 @@ each, and confirms the archive-root layout (all three repos present). The
 tarball is removed automatically, so verify the live result instead:
 
 ```sh
-# live check after deploy (Pages takes ~1 min to propagate); all three repos
+# live check after deploy (Pages takes ~1 min to propagate); repodata lives at
+# <repo>/$releasever/$basearch/, so point at that tree (44/x86_64 is the only
+# published tree — $releasever expands empty in an unquoted shell variable):
 for repo in ai-custom-infra ai-custom-infra-source ai-custom-infra-debuginfo; do
-  curl -fsS "https://enricotagliavini.github.io/repositories/$repo/repodata/repomd.xml"
+  curl -fsS "https://enricotagliavini.github.io/repositories/$repo/44/x86_64/repodata/repomd.xml"
 done
-# binaries are enabled by default; query them directly:
-dnf --disablerepo='*' --repofrompath=aci,https://enricotagliavini.github.io/repositories/ai-custom-infra/ repoquery -l
+# binaries are enabled by default; query them directly (this is the new baseurl):
+dnf --disablerepo='*' --repofrompath=aci,https://enricotagliavini.github.io/repositories/ai-custom-infra/44/x86_64/ repoquery -l
 ```
 
 ## Client install contract (keep in sync with `web/index.html` and README.md)
@@ -97,22 +99,28 @@ dnf --disablerepo='*' --repofrompath=aci,https://enricotagliavini.github.io/repo
 ```ini
 [ai-custom-infra]
 name=AI Custom Infra
-baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra/
+baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra/$releasever/$basearch/
 enabled=1
 gpgcheck=0
 
 [ai-custom-infra-source]
 name=AI Custom Infra - Source
-baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra-source/
+baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra-source/$releasever/$basearch/
 enabled=0
 gpgcheck=0
 
 [ai-custom-infra-debuginfo]
 name=AI Custom Infra - Debuginfo
-baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra-debuginfo/
+baseurl=https://enricotagliavini.github.io/repositories/ai-custom-infra-debuginfo/$releasever/$basearch/
 enabled=0
 gpgcheck=0
 ```
+
+Each baseurl ends in `$releasever/$basearch`: the generated file is the mirror
+of what `scripts/build-site.py` emits, which reads the versioned components off
+the actual tree (`versioned_tree()`) rather than hardcoding them. Clients using
+the old flat URLs (e.g. `.../repositories/ai-custom-infra/`) no longer resolve;
+this was a deliberate breaking change.
 
 Packages are unsigned. If GPG signing is introduced, all three places
 (`web/index.html`, `README.md`, this file) must change together.
