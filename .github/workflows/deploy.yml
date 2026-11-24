@@ -111,12 +111,11 @@ jobs:
             # repodata has to be checked there — a flat <repo>/repodata/ fails.
             for repo in $repos; do
               repo_dir="build/repositories/$repo"
-              # The versioned tree is the first-level child holding
-              # repodata/repomd.xml (i.e. <repo>/$releasever/$basearch/);
-              # require one, rather than taking whatever first-level dir
-              # happens to exist.
+              # The versioned tree is the leaf <repo>/$releasever/$basearch/
+              # holding repodata/repomd.xml; require one, rather than taking
+              # whatever first-level dir happens to exist.
               versioned_dir=""
-              for child in "$repo_dir"/*/; do
+              for child in "$repo_dir"/*/*/; do
                 [ -d "$child" ] || continue
                 if [ -f "$child/repodata/repomd.xml" ]; then
                   versioned_dir="$child"

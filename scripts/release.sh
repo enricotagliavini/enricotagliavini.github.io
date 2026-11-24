@@ -13,9 +13,10 @@
 #        - ${REPO_NAME}            binaries
 #        - ${REPO_NAME}-source     *.src.rpm
 #        - ${REPO_NAME}-debuginfo  *-debuginfo- / *-debugsource-
-#   3. regenerate repodata with createrepo_c for each repo (MUST — otherwise new
-#      RPMs are invisible to dnf); repodata sits at each repo's root and
-#      references the repo-relative $releasever/$basearch paths
+#   3. regenerate repodata with createrepo_c for each versioned tree
+#      (MUST — otherwise new RPMs are invisible to dnf); repodata sits at each
+#      <repo>/$releasever/$basearch/ alongside the RPMs, referencing the
+#      repo-relative $releasever/$basearch paths
 #   4. verify each repo is a usable DNF repo (repomd.xml + >=1 .rpm)
 #   5. write dist/<REPO_NAME>-<version>.tar.zst with the three repo dirs at
 #      ARCHIVE ROOT (ai-custom-infra/…, ai-custom-infra-source/…, …) — the
@@ -189,11 +190,15 @@ reorganize() {
     cp -a -- "$rpm" "$dest/"
   done < <(find "$stage_dir/input" -name '*.rpm' -type f -print0)
 
-  # Regenerate repodata for each repo (full regenerate: deterministic, drops
-  # stale references). repodata sits at each repo's root.
-  local repo
-  for repo in "${REPOS[@]}"; do
-    regenerate_repodata "$root/$repo"
+  # Regenerate repodata for each versioned tree, alongside the RPMs
+  # (full regenerate: deterministic, drops stale references). createrepo_c
+  # places repodata/ at the directory it indexes, so point it at each leaf tree
+  # (<repo>/$releasever/$basearch/, which holds only RPMs) rather than the repo
+  # root — that is where build-site.py points the baseurl.
+  local repo_tree
+  for repo_tree in "$root"/*/*/*/; do
+    [ -d "$repo_tree" ] || continue
+    regenerate_repodata "$repo_tree"
   done
 }
 
@@ -207,13 +212,15 @@ regenerate_repodata() {
   createrepo_c --general-compress-type=zstd "$repo_dir" >/dev/null
 }
 
-# Fail if any repo is not a usable DNF repo: each must have repomd.xml and
-# at least one .rpm.
+# Fail if any repo is not a usable DNF repo: each must have repomd.xml (one per
+# <repo>/$releasever/$basearch/, since repodata now sits alongside the RPMs)
+# and at least one .rpm.
 verify_repos() {
-  local repo rpm_count
+  local repo repomd_count rpm_count
   for repo in "${REPOS[@]}"; do
-    [ -f "$stage_dir/repo/$repo/repodata/repomd.xml" ] \
-      || die "$repo: createrepo_c did not produce repodata/repomd.xml"
+    repomd_count=$(find "$stage_dir/repo/$repo" -name repomd.xml -type f | wc -l)
+    [ "$repomd_count" -ge 1 ] \
+      || die "$repo: createrepo_c did not produce repomd.xml (expected one per <repo>/$releasever/$basearch/)"
     rpm_count=$(find "$stage_dir/repo/$repo" -name '*.rpm' -type f | wc -l)
     [ "$rpm_count" -ge 1 ] \
       || die "$repo: no .rpm files — nothing classified into it (check names?)"
