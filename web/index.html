@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Enrico Tagliavini's personal page — HPC &amp; Automation on Fedora, Free Software, open-weight AI.">
+<title>Enrico Tagliavini — personal page</title>
+<style>
+  :root {
+    /* blue: light → dark */
+    --blue-50:  #eff6ff;
+    --blue-100: #dbeafe;
+    --blue-200: #bfdbfe;
+    --blue-300: #93c5fd;
+    --blue-400: #60a5fa;
+    --blue-500: #3b82f6;
+    --blue-600: #2563eb;
+    --blue-700: #1d4ed8;
+    --blue-800: #1e40af;
+    --blue-900: #1e3a8a;
+    --blue-950: #172554;
+    /* accent: electric cyan */
+    --cyan-400: #22d3ee;
+    --cyan-500: #06b6d4;
+    --cyan-600: #0891b2;
+    --cyan-700: #0e7490;
+    --cyan-800: #155e75;
+    --cyan-900: #164e63;
+    --ink:      #0f172a;
+    --muted:    #475569;
+    --border:   #e2e8f0;
+    --card-bg:  #ffffff;
+    --page-bg:  #f8fafc;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--page-bg);
+    color: var(--ink);
+    line-height: 1.65;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em; }
+  a { color: var(--blue-600); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(155deg, var(--blue-800), var(--blue-600));
+    color: #fff;
+    border-bottom: 3px solid var(--blue-950);
+  }
+  .hero .wrap { padding: 1.75rem 2.5rem; }
+  .tagline { margin: 0; color: var(--blue-100); font-size: .95rem; }
+
+  main { padding-top: 2rem; padding-bottom: 3rem; }
+
+  /* Cards / sections */
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--blue-500);
+    border-radius: .6rem;
+    padding: 1.5rem 1.4rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 4px 12px rgba(15,23,42,.05);
+  }
+  .card + .card { margin-top: 0; }
+
+  h2 {
+    margin: 0 0 0.9rem;
+    color: var(--blue-900);
+    font-size: 1.3rem;
+  }
+  h2 .marker { color: var(--cyan-500); }
+  h2::after {
+    content: "";
+    display: inline-block;
+    width: 2.5rem;
+    height: 3px;
+    background: var(--blue-400);
+    margin-left: .5rem;
+    vertical-align: middle;
+    border-radius: 2px;
+  }
+  h3 { margin: 0 0 .35rem; color: var(--blue-800); font-size: 1.05rem; }
+  .repo h3::before {
+    content: "";
+    display: inline-block;
+    width: .65rem; height: .65rem;
+    margin-right: .4rem;
+    background: var(--cyan-500);
+    border-radius: 2px;
+    vertical-align: middle;
+  }
+  p { margin: 0 0 .75rem; }
+
+  /* Buttons */
+  .btn {
+    display: inline-block;
+    font-weight: 600;
+    padding: .5rem .95rem;
+    border-radius: .45rem;
+    line-height: 1.2;
+  }
+  .btn-primary { background: var(--blue-600); color: #fff; }
+  .btn-primary:hover { background: var(--blue-700); text-decoration: none; }
+  .btn-accent  { background: var(--cyan-500); color: var(--blue-950); }
+  .btn-accent:hover { background: var(--cyan-700); text-decoration: none; }
+
+  pre {
+    background: var(--blue-50);
+    border: 1px solid var(--blue-200);
+    border-left: 3px solid var(--blue-500);
+    border-radius: .4rem;
+    padding: .85rem 1rem;
+    color: var(--blue-950);
+    overflow-x: auto;
+    margin: .5rem 0 1rem;
+  }
+
+  .note {
+    font-size: .9em;
+    color: var(--blue-800);
+    background: var(--blue-50);
+    border-left: 3px solid var(--blue-300);
+    padding: .6rem .85rem;
+    border-radius: 0 .4rem .4rem 0;
+    margin: 0;
+  }
+
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 1.5rem 0;
+    color: var(--muted);
+    font-size: .85rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="tagline">Personal projects · HPC &amp; Automation on Fedora</p>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <!-- About -->
+    <section class="card" id="about">
+      <h2><span class="marker">◆</span> About</h2>
+      <p>I'm <strong>Enrico Tagliavini</strong>, a professional IT expert specializing in HPC
+         (High-Performance Computing) and Automation. I'm a big fan of Free Software and Linux.</p>
+      <p>This is my personal page, hosted on GitHub Pages, for non-work projects and hobbies.
+         Since I'm a strong believer that software should be free — <em>as in freedom</em> —
+         I share what I create mostly on GitHub and this website, so others can check it out and
+         re-use it if they find it useful.</p>
+      <p>I'm also a user of open-weight AI LLM models; without them, it would be difficult for me
+         to find the time for this. My other hobbies include mountain biking and dancing Tango Argentino.</p>
+      <p><a class="btn btn-accent" href="https://www.linkedin.com/in/enrico-tagliavini-58009b37/">View my profile on LinkedIn</a></p>
+    </section>
+
+    <!-- Repositories -->
+    <section class="card" id="repositories">
+      <h2><span class="marker">◆</span> Repositories</h2>
+      <p>The artifacts hosted here are published on <strong>GitHub</strong> (via GitHub Actions)
+         and served from this site — nothing is self-hosted.</p>
+
+      <p>
+        <a class="btn btn-primary" href="https://enricotagliavini.github.io/repositories/index.html">
+          Browse the RPM repositories
+        </a>
+      </p>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Powered by <a href="https://github.com/enricotagliavini">GitHub</a> · Enrico Tagliavini</p>
+  </div>
+</footer>
+
+</body>
+</html>
