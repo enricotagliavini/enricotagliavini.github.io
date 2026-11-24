@@ -1,0 +1,8 @@
+# Local DNF repository input (RPMs are >100 MB and must never enter git)
+f44/
+# Packaging output
+dist/
+# Python bytecode (build-site.py is run via `python3 scripts/...`; importing it
+# locally to test it creates __pycache__/)
+__pycache__/
+*.pyc
