@@ -5,16 +5,24 @@ Project: GitHub Pages site hosting a self-produced DNF RPM repository
 maintenance and dependability** — reliable, few moving parts, no third-party
 CI actions.
 
+- **Keep documentation in sync with code.** This file, `README.md`, and the
+  script headers are user-facing contracts describing the same behavior. When
+  you change behavior, update the docs that describe it in the same commit —
+  out-of-date docs here mislead the next edit, so this file is worse than none.
+
 ## Layout
 
 - `web/` — static site content; the workflow copies it verbatim to the site root.
   Add files here freely; the deploy workflow never needs changes.
 - `scripts/release.sh <dnf-repo-dir> <version>` — local packaging + publish in
-  one step (options: `-n/--notes`, `-h/--help`; see script header for the
-  contract). Stages a copy of the repo dir, **reorganizes it into a
-  per-version tree (`<repo>/$releasever/$basearch`, split across three repos),
-  regenerates repodata, writes the tarball, creates the release, then removes
-  the local tarball on exit.**
+  one step (options: `-n/--notes`, `--dry-run`, `--force`, `-h/--help`; see
+  script header for the contract). **Purges old RPMs from the input dir in
+  place with `dnf repomanage` (keeps only the newest version of each package),
+  then stages a copy, reorganizes it into a per-version tree
+  (`<repo>/$releasever/$basearch`, split across three repos), regenerates
+  repodata, writes the tarball, creates the release, then removes the local
+  tarball on exit.** `--dry-run` only lists the purge (against the staged copy)
+  and leaves the input untouched; `--force` skips the confirmation prompt.
 - `.github/workflows/deploy.yml` — the only CI. Deploys `web/` + the release
   asset to GitHub Pages (Pages source must stay "GitHub Actions"; published
   via `actions/deploy-pages`).
@@ -54,14 +62,17 @@ CI actions.
 ./scripts/release.sh path/to/repo 1.1.0   # → release ai-custom-infra-1.1.0 (triggers pipeline; removes the local tarball)
 ```
 
-- `release.sh` stages a copy of the repo dir, **reorganizes it into a
-  per-version tree (`<repo>/$releasever/$basearch`) and splits its RPMs into the
-  three repos (binaries, source, debuginfo), then** regenerates repodata with
-  `createrepo_c` (MUST — otherwise new RPMs are invisible to dnf), verifies
-  `repodata/repomd.xml` + ≥1 `.rpm` **for each repo**, then creates the release
-  and removes the local tarball on exit (on success or failure, via an `EXIT`
-  trap). It never modifies the input dir. It fails hard if the tag already
-  exists: bump the
+- `release.sh` **purges old RPMs from the input dir in place with
+  `dnf repomanage -o -k 1`** (keeps only the newest version of each package;
+  prompts for confirmation unless `--force`), then stages a copy, **reorganizes
+  it into a per-version tree (`<repo>/$releasever/$basearch`) and splits its
+  RPMs into the three repos (binaries, source, debuginfo), then** regenerates
+  repodata with `createrepo_c` (MUST — otherwise new RPMs are invisible to dnf),
+  verifies `repodata/repomd.xml` + ≥1 `.rpm` **for each repo**, then creates the
+  release and removes the local tarball on exit (on success or failure, via an
+  `EXIT` trap). The input dir **is modified in place** — except under
+  `--dry-run`, which runs the purge against the throwaway staged copy and leaves
+  the input untouched. It fails hard if the tag already exists: bump the
   version — this is checked **before** staging/packaging, so an already-published
   version never produces a tarball. It tags the release at a **fresh marker
   commit** (same tree as HEAD, unique SHA) built with `git commit-tree`. GitHub
