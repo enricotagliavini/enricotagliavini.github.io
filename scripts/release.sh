@@ -6,37 +6,44 @@
 # Combines what used to be scripts/package-repo.sh and scripts/publish-release.sh
 # into a single, single-purpose tool:
 #
-#   1. stage a COPY of the repo dir (the input is never modified)
-#   2. reorganize the RPMs into the standard <repo>/$releasever/$basearch layout
+#   1. purge old RPMs from the INPUT repo dir with `dnf repomanage` (keep only
+#      the newest version of each package). This modifies the input in place —
+#      unless --dry-run (which only lists what would be removed, against the
+#      staged copy) or the confirmation prompt is declined (see below)
+#   2. stage a COPY of the (now purged) repo dir
+#   3. reorganize the RPMs into the standard <repo>/$releasever/$basearch layout
 #      (releasever + basearch parsed from each RPM name; only x86_64 is
 #      published), split across three repos:
 #        - ${REPO_NAME}            binaries
 #        - ${REPO_NAME}-source     *.src.rpm
 #        - ${REPO_NAME}-debuginfo  *-debuginfo- / *-debugsource-
-#   3. regenerate repodata with createrepo_c for each versioned tree
+#   4. regenerate repodata with createrepo_c for each versioned tree
 #      (MUST — otherwise new RPMs are invisible to dnf); repodata sits at each
 #      <repo>/$releasever/$basearch/ alongside the RPMs, referencing the
 #      repo-relative $releasever/$basearch paths
-#   4. verify each repo is a usable DNF repo (repomd.xml + >=1 .rpm)
-#   5. write dist/<REPO_NAME>-<version>.tar.zst with the three repo dirs at
+#   5. verify each repo is a usable DNF repo (repomd.xml + >=1 .rpm)
+#   6. write dist/<REPO_NAME>-<version>.tar.zst with the three repo dirs at
 #      ARCHIVE ROOT (ai-custom-infra/…, ai-custom-infra-source/…, …) — the
 #      archive-root layout is required because repomd.xml references
 #      repo-relative paths
-#   6. create the GitHub release ai-custom-infra-<version> with that tarball as
+#   7. create the GitHub release ai-custom-infra-<version> with that tarball as
 #      the asset; the release triggers .github/workflows/deploy.yml
-#   7. delete the local tarball — on success OR failure (see cleanup below)
+#   8. delete the local tarball — on success OR failure (see cleanup below)
 #
 # Add --dry-run to stop after step 4 (repodata regenerated, layout verified)
 # without writing the tarball or creating the release — no GitHub side effects,
-# so you can inspect the result before publishing.
+# so you can inspect the result before publishing. In --dry-run the purge step
+# (1) only lists what would be removed and runs against the staged copy, so the
+# inspected layout is post-purge while the input is left untouched.
 #
 # The tarball is always generated (there is no "package without publishing" mode
 # unless --dry-run is given), so cleanup is unconditional: an EXIT trap removes
 # the tarball (and the temp staging dir) no matter how the script exits. A failed
 # attempt simply re-runs from a fresh staged copy.
 #
-# Requirements: createrepo_c, zstd, tar (with zstd support), git, gh
-# (authenticated, e.g. via `gh auth login` or GH_TOKEN).
+# Requirements: createrepo_c, zstd, tar (with zstd support), dnf (for
+# `dnf repomanage`, used to purge old packages), git, gh (authenticated, e.g.
+# via `gh auth login` or GH_TOKEN).
 
 set -euo pipefail
 
@@ -50,6 +57,7 @@ repo_dir=""
 version=""
 notes=""
 dry_run=0
+force=0
 stage_dir=""
 tarball=""
 
@@ -71,12 +79,18 @@ Options:
   -n, --notes TEXT     release notes (default: "${REPO_NAME} DNF repository, version <version>.")
   --dry-run            stage, reorganize and index the repo, then stop without
                        writing the tarball or creating the release (no GitHub
-                       side effects) — inspect the resulting layout first
+                       side effects) — inspect the resulting layout first. The
+                       purge step only lists what would be removed and leaves
+                       the input untouched
+  --force              for the purge step below, remove the old packages
+                       without the confirmation prompt
   -h, --help           show this help and exit
 
-The <dnf-repo-dir> is only staged as a copy and is never modified. The local
-tarball is removed automatically after the release is created — on success or
-failure.
+The <dnf-repo-dir> is purged in place with `dnf repomanage` before it is staged
+(only the newest version of each package is kept) — unless --dry-run, which
+only lists what would be removed and leaves the input untouched, or the
+confirmation prompt is declined. The local tarball is removed automatically
+after the release is created — on success or failure.
 
 Example:
   $(basename "$0") --dry-run f44 1.1.0
@@ -122,8 +136,69 @@ validate_version() {
     || die "invalid version '$version' (allowed: letters, digits, . _ + -)"
 }
 
+# Purge old RPMs from <dir>, keeping only the newest version of each package.
+# Uses `dnf repomanage -o -k 1`, which lists (never deletes) every package that
+# is not the newest of its (name, arch) group; the listed paths are removed
+# here. <prompt> is 1 to ask before deleting (original mode) or 0 to delete
+# silently (copy mode, used by --dry-run on the throwaway staged copy). --force
+# skips the prompt in original mode. <dir> is modified in place.
+purge_old_rpms() {
+  local dir="$1" prompt="$2"
+  [ -d "$dir" ] || die "dir '$dir' not found"
+  # Capture repomanage's list (stdout); a non-zero exit means dnf/repomanage
+  # itself failed, which is fatal — distinct from "nothing to purge" (exit 0,
+  # empty output).
+  local to_purge
+  to_purge=$(dnf repomanage -o -k 1 -- "$dir" 2>/dev/null) \
+    || die "repomanage failed (is dnf installed?)"
+  # Empty / whitespace-only output means nothing is older than a kept package.
+  if [ -z "${to_purge//[[:space:]]/}" ]; then
+    echo "repomanage: nothing to purge in '$dir'"
+    return 0
+  fi
+  local count
+  count=$(printf '%s\n' "$to_purge" | wc -l)
+  count=$((count))
+  echo "repomanage: $count old package(s) to remove (older than the newest per package):"
+  printf '%s\n' "$to_purge" | sed 's/^/  /'
+  # Ask before touching the caller's repo, unless --force. A read EOF
+  # (non-interactive) is treated as a decline — safer than deleting.
+  if [ "$prompt" -eq 1 ] && [ "$force" -ne 1 ]; then
+    local answer
+    if ! IFS= read -r -p "Purge those $count package(s) from '$dir'? [y/N] " answer; then
+      die "aborted: no confirmation received; nothing was removed"
+    fi
+    case $answer in
+      [Yy]|[Yy][Ee][Ss]) ;;
+      *) die "aborted: nothing was removed" ;;
+    esac
+  fi
+  # Remove only regular .rpm files (repomanage lists files, but guard against
+  # any non-.rpm path it might ever emit).
+  local n=0 path
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    case $path in
+      *.rpm) : ;;
+      *) continue ;;
+    esac
+    [ -f "$path" ] || continue
+    if rm -f -- "$path"; then
+      n=$((n + 1))
+    else
+      echo "  warning: could not remove '$path'" >&2
+    fi
+  done <<< "$to_purge"
+  if [ "$prompt" -eq 0 ]; then
+    echo "dry-run: purged the staging copy; the input '$repo_dir' was left untouched."
+  else
+    echo "purged $n package(s) from '$dir'."
+  fi
+}
+
 # Copy the input repo into a fresh temp dir. Everything below operates on the
-# copy, so the caller's repo dir is never modified.
+# copy. (The input may have been purged in place by purge_old_rpms before this
+# call; this copy step itself never touches it.)
 stage_repo() {
   [ -d "$repo_dir" ] || die "repo dir '$repo_dir' not found"
   stage_dir=$(mktemp -d)
@@ -290,13 +365,14 @@ create_release() {
 parse_args() {
   local script_name parsed
   script_name=$(basename "$0")
-  parsed=$(getopt -o n:h --long notes:,help,dry-run -n "$script_name" -- "$@") \
+  parsed=$(getopt -o n:h --long notes:,help,dry-run,force -n "$script_name" -- "$@") \
     || { usage >&2; exit 2; }
   eval set -- "$parsed"
   while true; do
     case $1 in
       -n|--notes) notes=$2; shift 2 ;;
       --dry-run) dry_run=1; shift ;;
+      --force) force=1; shift ;;
       -h|--help) usage; exit 0 ;;
       --) shift; break ;;
       *) die "internal error: unhandled option '$1'" ;;
@@ -318,7 +394,16 @@ main() {
       die "release '${REPO_NAME}-${version}' already exists — use a new version"
     fi
   fi
-  stage_repo
+  if [ "$dry_run" -eq 1 ]; then
+    # Purge the staged copy (not the input) so --dry-run has no side effects on
+    # the user's repo yet still shows a post-purge layout.
+    stage_repo
+    purge_old_rpms "$stage_dir/input" 0
+  else
+    # Purge the input in place (newest version per package kept), then stage it.
+    purge_old_rpms "$repo_dir" 1
+    stage_repo
+  fi
   reorganize
   verify_repos
   if [ "$dry_run" -eq 1 ]; then
@@ -335,4 +420,8 @@ main() {
   echo "  curl -fsS ${SITE_URL}/repodata/repomd.xml"
 }
 
-main "$@"
+# Run only when executed directly, so the purge logic can be sourced and tested
+# in isolation.
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
