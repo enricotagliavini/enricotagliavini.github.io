@@ -151,10 +151,11 @@ jobs:
 
       # deploy-pages fetches the github-pages artifact via the (eventually
       # consistent) Actions API, so it can fail with "No artifacts named
-      # github-pages were found" right after upload. Poll for the artifact to
-      # be visible rather than guessing a delay: a capped, principled version
-      # of the sleep. The residual rare race still fails the job (needs a
-      # manual re-run).
+      # github-pages were found" right after upload. Poll for THIS run's
+      # artifact to be listed (scoped by workflow_run.id: the repository-level
+      # list spans every run, so an unfiltered count never settles on 1)
+      # rather than guessing a delay: a capped, principled version of a sleep.
+      # The residual rare race still fails the job (needs a manual re-run).
       - name: Wait for Pages artifact to be ready
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -162,7 +163,8 @@ jobs:
           set -euo pipefail
           deadline=$((SECONDS + 120))
           until gh api "repos/${{ github.repository }}/actions/artifacts?name=github-pages" \
-               --jq '.total_count' 2>/dev/null | grep -q '^1$'; do
+               --jq ".artifacts | map(select(.workflow_run.id == ${{ github.run_id }})) | length" \
+               2>/dev/null | grep -q '^1$'; do
             if [ "$SECONDS" -ge "$deadline" ]; then
               echo 'error: github-pages artifact not available after 2 minutes' >&2
               exit 1
