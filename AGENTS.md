@@ -25,7 +25,12 @@ CI actions.
   and leaves the input untouched; `--force` skips the confirmation prompt.
 - `.github/workflows/deploy.yml` — the only CI. Deploys `web/` + the release
   asset to GitHub Pages (Pages source must stay "GitHub Actions"; published
-  via `actions/deploy-pages`).
+  via `actions/deploy-pages`). `deploy-pages` fetches the Pages artifact via
+  the eventually-consistent Actions API, so it can intermittently fail with
+  "No artifacts named github-pages were found" right after upload — a
+  readiness poll (`Wait for Pages artifact to be ready`, gated by the new
+  `actions: read` permission) retries that condition before deploy rather than
+  a blind sleep; the residual rare failure still needs a manual re-run.
 - `dist/` — tarball output (gitignored, never committed).
 
 ## Hard constraints (do not break)

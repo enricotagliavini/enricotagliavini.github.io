@@ -17,6 +17,13 @@
 # Only dependencies: first-party actions/* (checkout, upload-pages-artifact,
 # deploy-pages) + preinstalled runner tools (gh, zstd, tar). See AGENTS.md
 # for the invariants.
+#
+# deploy-pages fetches the github-pages artifact via the (eventually
+# consistent) Actions API, so it can fail with "No artifacts named
+# github-pages were found" right after upload. A readiness poll before the
+# deploy retries that condition (a capped, principled version of a sleep);
+# the residual rare failure still fails the job. `actions: read` above lets gh
+# query the artifact.
 
 name: deploy
 
@@ -36,6 +43,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
 
 jobs:
   deploy:
@@ -140,6 +148,28 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: build
+
+      # deploy-pages fetches the github-pages artifact via the (eventually
+      # consistent) Actions API, so it can fail with "No artifacts named
+      # github-pages were found" right after upload. Poll for the artifact to
+      # be visible rather than guessing a delay: a capped, principled version
+      # of the sleep. The residual rare race still fails the job (needs a
+      # manual re-run).
+      - name: Wait for Pages artifact to be ready
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 120))
+          until gh api "repos/${{ github.repository }}/actions/artifacts?name=github-pages" \
+               --jq '.total_count' 2>/dev/null | grep -q '^1$'; do
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo 'error: github-pages artifact not available after 2 minutes' >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          echo "github-pages artifact ready"
 
       - name: Deploy to GitHub Pages
         id: deployment
